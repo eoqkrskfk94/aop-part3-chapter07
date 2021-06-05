@@ -5,18 +5,23 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.util.Log
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
 import com.naver.maps.geometry.LatLng
 import com.naver.maps.map.*
 import com.naver.maps.map.overlay.Marker
+import com.naver.maps.map.overlay.Overlay
 import com.naver.maps.map.util.FusedLocationSource
 import com.naver.maps.map.util.MarkerIcons
+import com.naver.maps.map.widget.LocationButtonView
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
-class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+class MainActivity : AppCompatActivity(), OnMapReadyCallback, Overlay.OnClickListener {
 
     private lateinit var naverMap: NaverMap
     private lateinit var locationSource: FusedLocationSource
@@ -25,12 +30,45 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         findViewById(R.id.mapView)
     }
 
+    private val viewPager: ViewPager2 by lazy {
+        findViewById(R.id.houseViewPager)
+    }
+
+    private val recyclerView: RecyclerView by lazy {
+        findViewById(R.id.recyclerView)
+    }
+
+    private val currentLocationButton: LocationButtonView by lazy {
+        findViewById(R.id.currentLocationButton)
+    }
+
+    private val viewPagerAdapter = HouseViewPagerAdapter()
+    private val recyclerAdapter = HouseListAdapter()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         mapView.onCreate(savedInstanceState)
 
         mapView.getMapAsync(this)
+
+        viewPager.adapter = viewPagerAdapter
+        recyclerView.adapter = recyclerAdapter
+        recyclerView.layoutManager = LinearLayoutManager(this)
+
+        viewPager.registerOnPageChangeCallback(object: ViewPager2.OnPageChangeCallback(){
+
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+
+                val selectedHouseModel = viewPagerAdapter.currentList[position]
+                val cameraUpdate = CameraUpdate.scrollTo(LatLng(selectedHouseModel.lat, selectedHouseModel.lng))
+                    .animate(CameraAnimation.Easing)
+
+                naverMap.moveCamera(cameraUpdate)
+            }
+        })
+
 
 
 
@@ -44,6 +82,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         val cameraUpdate = CameraUpdate.scrollTo(LatLng(37.497885 , 127.02752))
         naverMap.moveCamera(cameraUpdate)
+
+        val uiSetting = naverMap.uiSettings
+        uiSetting.isLocationButtonEnabled = false
+        currentLocationButton.map = naverMap
 
         locationSource = FusedLocationSource(this@MainActivity, LOCATION_PERMISSION_REQUEST_CODE)
         naverMap.locationSource = locationSource
@@ -68,6 +110,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         response.body()?.let { dto ->
                             Log.d("Retrofit", dto.toString())
                             updateMarker(dto.items)
+                            viewPagerAdapter.submitList(dto.items)
+                            recyclerAdapter.submitList(dto.items)
                         }
                     }
 
@@ -83,6 +127,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         houses.forEach { house ->
             val marker = Marker()
             marker.position = LatLng(house.lat, house.lng)
+            marker.onClickListener = this
             marker.map = naverMap
             marker.tag = house.id
             marker.icon = MarkerIcons.BLACK
@@ -144,6 +189,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     companion object {
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1000
+    }
+
+    override fun onClick(overlay: Overlay): Boolean {
+
+        val selectedModel = viewPagerAdapter.currentList.firstOrNull {
+            it.id == overlay.tag
+        }
+
+        selectedModel?.let {
+           val position =  viewPagerAdapter.currentList.indexOf(it)
+            viewPager.currentItem = position
+        }
+
+        return true
     }
 
 
